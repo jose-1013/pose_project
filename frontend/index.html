@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>운동 선택</title>
+  <style>
+    body {
+      background: #f4f6fa;
+      font-family: 'Noto Sans KR', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    h1 {
+      margin-bottom: 30px;
+    }
+
+    button {
+      width: 200px;
+      padding: 15px;
+      margin: 10px;
+      font-size: 18px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+    }
+
+    button:hover {
+      background-color: #3a9e45;
+    }
+  </style>
+</head>
+<body>
+  <h1>운동을 선택하세요</h1>
+  <button onclick="selectPose('squat', '크로스핏')">🏋️‍♂️ Squat</button>
+  <button onclick="selectPose('cat', '요가')">🐱 Cat</button>
+  <script>
+    function selectPose(type, category) {
+      localStorage.setItem('pose_type', type);
+      localStorage.setItem('pose_category', category);
+      window.location.href = "pose.html";
+    }
+  </script>
+</body>
+</html>

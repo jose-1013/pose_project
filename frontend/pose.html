@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>운동 피드백</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #1e1e1e;
+      font-family: 'Noto Sans KR', sans-serif;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin-top: 20px;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    #camera-container {
+      position: relative;
+      width: 360px;
+      height: 480px;
+      margin-top: 20px;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    video, canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #button-group {
+        width: 360px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px; /* 버튼 간 간격 */
+        margin-top: 16px;
+    }
+
+    #button-group button {
+        width: 100%;  /* ✅ 부모인 360px에 맞춤 */
+        padding: 12px;
+        font-size: 16px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    #pose-description {
+        background-color: #1976D2;
+        color: white;
+    }
+
+    #get-feedback {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    #pose-description:hover {
+        background-color: #103d71;
+    }
+
+    #get-feedback:hover {
+        background-color: #2b6d2f;
+    }
+
+
+    #feedback-text {
+      margin-top: 16px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="pose-name">운동 이름</h1>
+
+  <div id="camera-container" style="position: relative; width: 360px; height: 480px;">
+    <video id="webcam" width="360" height="480" autoplay muted playsinline></video>
+    <canvas id="output" width="360" height="480"></canvas>
+  </div>
+
+  <div id="button-group">
+    <button id="pose-description">동작 설명 듣기</button>
+    <button id="get-feedback">자세 피드백 받기</button>
+  </div>
+
+  <p id="feedback-text"></p>
+  <audio id="success-sound" src="딩동댕.wav" preload="auto"></audio>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+  <script>
+    const poseType = localStorage.getItem("pose_type") || "squat";
+    const category = localStorage.getItem("pose_category") || "크로스핏";
+
+    const poseName = document.getElementById("pose-name");
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+    const feedbackText = document.getElementById('feedback-text');
+    const button = document.getElementById('get-feedback');
+
+    let detector, keypoints = [];
+
+    const nameMap = {
+      'nose': 'NOSE', 'left_shoulder': 'LEFT_SHOULDER', 'right_shoulder': 'RIGHT_SHOULDER',
+      'left_elbow': 'LEFT_ELBOW', 'right_elbow': 'RIGHT_ELBOW', 'left_wrist': 'LEFT_WRIST',
+      'right_wrist': 'RIGHT_WRIST', 'left_hip': 'LEFT_HIP', 'right_hip': 'RIGHT_HIP',
+      'left_knee': 'LEFT_KNEE', 'right_knee': 'RIGHT_KNEE', 'left_ankle': 'LEFT_ANKLE', 'right_ankle': 'RIGHT_ANKLE'
+    };
+
+    const connections = [
+      ["LEFT_SHOULDER", "RIGHT_SHOULDER"], ["LEFT_SHOULDER", "LEFT_ELBOW"], ["LEFT_ELBOW", "LEFT_WRIST"],
+      ["RIGHT_SHOULDER", "RIGHT_ELBOW"], ["RIGHT_ELBOW", "RIGHT_WRIST"],
+      ["LEFT_SHOULDER", "LEFT_HIP"], ["RIGHT_SHOULDER", "RIGHT_HIP"],
+      ["LEFT_HIP", "RIGHT_HIP"], ["LEFT_HIP", "LEFT_KNEE"], ["LEFT_KNEE", "LEFT_ANKLE"],
+      ["RIGHT_HIP", "RIGHT_KNEE"], ["RIGHT_KNEE", "RIGHT_ANKLE"],
+      ["NOSE", "LEFT_SHOULDER"], ["NOSE", "RIGHT_SHOULDER"]
+    ];
+
+    const poseDescriptions = {
+        squat: "스쿼트는 어깨 너비로 벌리고 바닥에 단단히 딛습니다. 무릎을 서서히 굽히면서 엉덩이를 뒤로 빼 앉듯이 내립니다. 마치 의자에 앉는 듯한 느낌으로, 무게중심은 뒤꿈치에 실리도록 유지해주세요. 상체는 앞으로 살짝 기울이고, 등을 곧게 펴서 척추가 말리지 않도록 합니다. 시선은 정면을 향하거나 약간 아래를 바라보면 안정적인 자세를 유지할 수 있습니다.",
+        cat: "고양이 자세는 네 발로 기는 자세입니다. 두 손과 두 무릎을 바닥에 대고, 어깨 아래에는 손, 엉덩이 아래에는 무릎이 오도록 합니다. 등을 평평하게 유지하고, 시선은 정면 또는 약간 앞쪽 바닥을 향하게 해주세요. 이 자세는 척추 정렬과 복부 안정화에 도움이 됩니다.",
+    };
+
+
+    async function setupCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+        return new Promise(resolve => {
+            video.onloadedmetadata = () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            resolve(video);
+            };
+        });
+    }
+
+    document.getElementById("pose-description").addEventListener("click", () => {
+        const description = poseDescriptions[poseType];
+        if (description) {
+            const msg = new SpeechSynthesisUtterance(description);
+            msg.lang = 'ko-KR';
+            window.speechSynthesis.speak(msg);
+        } else {
+            alert("해당 동작에 대한 설명이 없습니다.");
+        }
+    });
+
+
+    async function loadModel() {
+      await tf.setBackend('webgl');
+      detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
+    }
+
+    async function drawPose() {
+      const poses = await detector.estimatePoses(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (poses.length > 0) {
+        keypoints = poses[0].keypoints;
+        for (const pt of keypoints) {
+          if (pt.score > 0.3 && nameMap[pt.name]) {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = "#00FF88";
+            ctx.fill();
+          }
+        }
+        for (const [a, b] of connections) {
+          const p1 = keypoints.find(p => nameMap[p.name] === a);
+          const p2 = keypoints.find(p => nameMap[p.name] === b);
+          if (p1 && p2 && p1.score > 0.3 && p2.score > 0.3) {
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = "#00FF88";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(drawPose);
+    }
+
+    function getUserPoseJSON() {
+      const pose = {};
+      for (const pt of keypoints) {
+        const name = nameMap[pt.name];
+        if (name && pt.score > 0.3) {
+          pose[name] = [pt.x, pt.y];
+        }
+      }
+      return pose;
+    }
+
+    async function requestFeedback(poseData) {
+      const response = await fetch("http://localhost:8000/api/feedback/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            pose_type: poseType, 
+            category: category,
+            user_pose: poseData })
+      });
+      return await response.json();
+    }
+
+    function speak(text) {
+      const msg = new SpeechSynthesisUtterance(text);
+      msg.lang = 'ko-KR';
+      window.speechSynthesis.speak(msg);
+    }
+
+    button.addEventListener('click', async () => {
+        const pose = getUserPoseJSON();
+        if (Object.keys(pose).length < 5) {
+            alert("자세를 인식하지 못했어요.");
+            return;
+        }
+
+        feedbackText.innerText = "⏳ 피드백 분석 중...";
+        const result = await requestFeedback(pose); // ✅ 백엔드로 POST 요청
+        feedbackText.innerText = result.feedback || "오류 발생";
+
+        const praiseKeywords = ["잘", "좋", "완벽", "유지"]; // ✅ 칭찬 키워드 기준
+        const isPositive = praiseKeywords.some(k => result.feedback?.includes(k));
+        
+        if (isPositive) {
+            document.getElementById("success-sound").play();
+            feedbackText.innerText = ""; // ✅ 텍스트는 숨김
+        } else {
+            feedbackText.innerText = result.feedback || "오류 발생";
+            speak(result.feedback);
+        }
+
+        });
+
+
+    async function loadPoseName() {
+      try {
+        const res = await fetch(`http://localhost:8000/api/current-pose/?category=${category}&pose_type=${poseType}`);
+        if (!res.ok) throw new Error("백엔드 응답 오류");
+        const data = await res.json();
+        poseName.innerText = data.pose_name || "운동 이름";
+      } catch (err) {
+        console.error("❌ 운동 이름 로딩 실패:", err);
+      }
+    }
+
+    setupCamera()
+      .then(loadModel)
+      .then(drawPose)
+      .then(loadPoseName);
+  </script>
+</body>
+</html>
