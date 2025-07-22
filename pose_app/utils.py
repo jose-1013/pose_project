@@ -68,5 +68,5 @@ def get_joint_angle_differences(ref_pose, user_pose):
             user_angle = calculate_angle(user_pose[a], user_pose[center], user_pose[b])
             angle_diffs[center] = round(abs(ref_angle - user_angle), 2)
         else:
-            angle_diffs[center] = None  # �먮뒗 -1 �먮뒗 "MISSING"
+            angle_diffs[center] = None
     return angle_diffs
