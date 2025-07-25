@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-cyg6^-3egkcl^rh!l=8_6g923ctn@se2tlu1kuc_e9dtm0twr3
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['pose-project.onrender.com', 'localhost', '127.0.0.1']
 
 
 # Application definition
@@ -130,3 +130,4 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
